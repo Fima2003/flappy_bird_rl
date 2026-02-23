@@ -39,7 +39,7 @@ class FlappyBirdGym(gym.Env):
         observation = self.get_state()
         self.current_step = 0
 
-        info = {}
+        info: dict[str, Any] = {}
 
         return observation, info
 
@@ -47,42 +47,42 @@ class FlappyBirdGym(gym.Env):
         total_reward = 0
         terminated = False
         truncated = False
-        
+
         # FRAME SKIP: Repeat the action 4 times
         for i in range(4):
             self.current_step += 1
-            
+
             # If the AI wants to jump (action==1), we only press the button
             # on the VERY FIRST frame (i==0).
             # On frames 1, 2, and 3, we force 'False' so gravity can work.
             if i == 0 and action == 1:
                 flap_action = True
-                total_reward -= 0.05 # Penalty for flapping (energy cost)
+                total_reward -= 0.05  # Penalty for flapping (energy cost)
             else:
                 flap_action = False
-            
+
             # Step the physics
             done, passed_pipe = self.game.step(flap_action)
-            
+
             # Render internal state
             self.game.render()
 
             # Accumulate Reward
             if done:
                 terminated = True
-                total_reward = -100 # High penalty for dying
+                total_reward = -100  # High penalty for dying
                 break
-            
+
             if passed_pipe:
                 total_reward += 10
-            
+
             total_reward += 0.1
 
             if self.current_step >= self.max_steps:
                 truncated = True
                 break
-        
+
         observation = self.get_state()
-        info = {"score": self.current_step}
+        info = {"score": self.game.score}
 
         return observation, total_reward, terminated, truncated, info

@@ -1,0 +1,15 @@
+flask
+flask-sock
+gunicorn
+gymnasium
+mlflow==3.9.0
+cloudpickle==3.1.2
+google-cloud-storage==3.9.0
+matplotlib==3.10.8
+numpy==2.2.6
+opencv-python-headless==4.13.0.90
+pandas==2.3.3
+psutil==7.2.1
+stable-baselines3==2.7.1
+tensorboard==2.20.0
+torch==2.10.0

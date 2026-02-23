@@ -2,11 +2,13 @@ import time
 import numpy as np
 from utils.fetch_model import model
 from env import env
+from utils.results_tracker import record_game
 
 obs = env.reset()
 
 # FPS Limiter setup
 FPS = 20
+current_steps = 0
 
 while True:
     start_time = time.time()
@@ -21,7 +23,14 @@ while True:
     action = np.array(action).flatten()
 
     obs, rewards, done, info = env.step(action)
+    current_steps += 1
     env.render()
+
+    if done:
+        score = info[0].get("score", 0) if isinstance(
+            info, (list, tuple)) else info.get("score", 0)
+        record_game("python", score)
+        obs = env.reset()
 
     # Cap the frame rate so you can actually watch it
     process_time = time.time() - start_time

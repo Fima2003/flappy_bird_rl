@@ -1,0 +1,10 @@
+__pycache__
+.vscode
+models*
+logs*
+mlflow.db
+mlruns/
+.git/
+.gitignore
+.DS_Store
+Dockerfile

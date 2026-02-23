@@ -74,6 +74,7 @@ class FlappyBird:
 
         self.running = True
         self.game_active = True
+        self.score = 0
 
         self.generate_first_10_pipes()
 
@@ -182,6 +183,7 @@ class FlappyBird:
                 pipe_data[2] = True
 
             if passed_pipe:
+                self.score += 1
                 self.generate_pipe_pair()
 
             # 3. Remove if off-screen
@@ -218,6 +220,7 @@ class FlappyBird:
         # Reset Pipes
         self.last_gap_y = None
         self.pipes.clear()
+        self.score = 0
         self.generate_first_10_pipes()  # Or just generate one pair to start
 
         return False  # Return 'done = False'

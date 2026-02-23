@@ -14,14 +14,13 @@ async function fetchAsset(assetPath) {
 }
 
 async function fetchAllAssets() {
-    const [pipe, bird, bg, base] = await Promise.all([
+    const [pipe, bird, bg] = await Promise.all([
         fetchAsset("pipe-green.png"),
         fetchAsset("yellowbird-midflap.png"),
         fetchAsset("bg.png"),
-        fetchAsset("base.png"),
     ])
 
-    return { pipe, bird, bg, base }
+    return { pipe, bird, bg }
 }
 
 function blobToImage(blob) {
@@ -63,10 +62,7 @@ function createPredictSocket(onAction, onResponse) {
         try {
             const payload = JSON.parse(event.data)
             if (typeof payload.action !== "undefined") {
-                console.log("Predicted action:", payload.action)
                 onAction(Number(payload.action))
-            } else {
-                console.log("Predict response:", payload)
             }
             onResponse()
         } catch (error) {
@@ -122,7 +118,7 @@ class FlappyBirdCanvasGame {
         this.distBetweenPairs = 200
         this.interDist = 100
         this.gapDelta = 150
-        this.groundTop = this.height - this.images.base.height
+        this.groundTop = this.height
         this.minGapTopClearance = 90
         this.minGapBottomClearance = 85
 
@@ -163,6 +159,7 @@ class FlappyBirdCanvasGame {
         this.bird.velocity = 0
 
         this.pipes = []
+        this.score = 0
         this.lastGapY = null
 
         for (let i = 0; i < 10; i += 1) {
@@ -173,7 +170,7 @@ class FlappyBirdCanvasGame {
     generatePipePair() {
         const halfGap = this.interDist / 2
         // Limit gap bounds so we don't expose the top or bottom of the 320px pipe image
-        const minY = Math.max(100, halfGap + this.height - this.images.base.height - this.images.pipe.height)
+        const minY = Math.max(100, halfGap + this.height - this.images.pipe.height)
         const maxY = Math.min(this.height - 100, this.images.pipe.height - halfGap)
 
         let gapCenterY
@@ -204,7 +201,7 @@ class FlappyBirdCanvasGame {
     }
 
     checkCollision() {
-        if (this.bird.y + this.bird.height >= this.height - this.images.base.height || this.bird.y <= 0) {
+        if (this.bird.y + this.bird.height >= this.height || this.bird.y <= 0) {
             return true
         }
 
@@ -255,6 +252,7 @@ class FlappyBirdCanvasGame {
         }
 
         if (passedPipe) {
+            this.score += 1
             this.generatePipePair()
         }
 
@@ -286,7 +284,6 @@ class FlappyBirdCanvasGame {
             targetCtx.restore()
         }
 
-        targetCtx.drawImage(this.images.base, 0, this.height - this.images.base.height)
         targetCtx.drawImage(this.images.bird, this.bird.x, this.bird.y)
     }
 
@@ -314,16 +311,14 @@ async function displayOnCanvas() {
     }
 
     const assets = await fetchAllAssets()
-    const [bgImage, baseImage, pipeImage, birdImage] = await Promise.all([
+    const [bgImage, pipeImage, birdImage] = await Promise.all([
         blobToImage(assets.bg),
-        blobToImage(assets.base),
         blobToImage(assets.pipe),
         blobToImage(assets.bird),
     ])
 
     const game = new FlappyBirdCanvasGame(canvas, ctx, {
         bg: bgImage,
-        base: baseImage,
         pipe: pipeImage,
         bird: birdImage,
     })
@@ -356,7 +351,6 @@ async function displayOnCanvas() {
     const frameInterval = 1000 / FPS
     let accumulator = 0
     let gameCount = 1
-    console.log(`New Game #${gameCount}`)
 
 
     const loop = (now) => {
@@ -376,7 +370,6 @@ async function displayOnCanvas() {
 
             if (!actionNeeded && !waitingForAction && stepsRemaining > 0) {
                 if (stepsRemaining === 4 && pendingAction === 1) {
-                    console.log("Action made: 1")
                     game.flapQueued = true
                 } else {
                     game.flapQueued = false
@@ -387,10 +380,9 @@ async function displayOnCanvas() {
 
                 if (done) {
                     gameCount += 1
-                    console.log(`New Game #${gameCount}`)
                     game.reset()
                     if (predictSocket.readyState === WebSocket.OPEN) {
-                        predictSocket.send(JSON.stringify({ reset: true }))
+                        predictSocket.send(JSON.stringify({ reset: true, score: game.score }))
                     }
                     actionNeeded = true
                     waitingForAction = false
