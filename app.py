@@ -1,14 +1,10 @@
 import json
-from collections import deque
 from pathlib import Path
 from typing import Any
 
-import cv2
-import numpy as np
 from flask import Flask, jsonify, render_template, send_from_directory
 from flask_sock import Sock  # type: ignore
 
-from utils.fetch_model import model
 from utils.results_tracker import record_game
 
 app = Flask(__name__)
@@ -16,39 +12,14 @@ sock = Sock(app)
 ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 
 
-def _normalize_frame(frame: Any) -> np.ndarray:
-    array_frame = np.asarray(frame, dtype=np.uint8)
-
-    if array_frame.ndim == 3 and array_frame.shape[-1] == 3:
-        array_frame = cv2.cvtColor(
-            array_frame, cv2.COLOR_RGB2GRAY)  # type: ignore
-
-    if array_frame.ndim != 2:
-        raise ValueError(
-            "Each frame must be a 2D grayscale image or 3-channel RGB image"
-        )
-
-    resized = cv2.resize(array_frame, (84, 84), interpolation=cv2.INTER_AREA)
-    return resized
-
-
-def predict(frames: list[Any]) -> int:
-    if len(frames) != 4:
-        raise ValueError("Exactly 4 frames are required")
-
-    normalized_frames = [_normalize_frame(frame) for frame in frames]
-
-    obs = np.stack(normalized_frames, axis=-1).astype(np.uint8)
-    obs = np.expand_dims(obs, axis=0)
-    obs_transposed = np.transpose(obs, (0, 3, 1, 2))
-
-    action = model.predict(obs_transposed)
-    return int(np.asarray(action).flatten()[0])
-
-
 @app.get("/")
 def index() -> str:
     return render_template("index.html")
+
+
+@app.get("/version")
+def version():
+    return jsonify({"version": 0.1})
 
 
 @app.get("/health")
@@ -63,11 +34,8 @@ def get_asset(filename: str):
 
 @sock.route("/predict")
 def predict_ws(ws) -> None:
-    frame_queue: deque[Any] = deque(maxlen=4)
-    step_count = 0
-    game_count = 0
-    ACTION_REPEAT = 4
-
+    # Kept route as /predict to avoid breaking frontend compatibility
+    # Now only used for tracking scores on reset
     while True:
         raw_message = ws.receive()
         if raw_message is None:
@@ -77,29 +45,9 @@ def predict_ws(ws) -> None:
             payload = json.loads(raw_message)
 
             if payload.get("reset"):
-                # Ensure we only record if step count is somewhat meaningful
-                if step_count > 0:
-                    score = payload.get("score", 0)
-                    record_game("web", score)
+                score = payload.get("score", 0)
+                record_game("web", score)
 
-                game_count += 1
-                frame_queue.clear()
-                step_count = 0
-                continue
-
-            frame = payload.get("frame")
-            if frame is None:
-                continue
-
-            step_count += 1
-            if len(frame_queue) == 0:
-                for _ in range(4):
-                    frame_queue.append(frame)
-            else:
-                frame_queue.append(frame)
-
-            action = predict(list(frame_queue))
-            ws.send(json.dumps({"action": action}))
         except Exception as exc:
             ws.send(json.dumps({"error": str(exc)}))
 

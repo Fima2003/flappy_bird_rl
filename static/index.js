@@ -50,25 +50,12 @@ function intersects(a, b) {
     )
 }
 
-function createPredictSocket(onAction, onResponse) {
+function createPredictSocket() {
     const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:"
     const ws = new WebSocket(`${wsProtocol}//${window.location.host}/predict`)
 
     ws.addEventListener("open", () => {
         console.log("/predict websocket connected")
-    })
-
-    ws.addEventListener("message", (event) => {
-        try {
-            const payload = JSON.parse(event.data)
-            if (typeof payload.action !== "undefined") {
-                onAction(Number(payload.action))
-            }
-            onResponse()
-        } catch (error) {
-            console.error("Invalid websocket message:", event.data, error)
-            onResponse()
-        }
     })
 
     ws.addEventListener("error", (error) => {
@@ -328,16 +315,8 @@ async function displayOnCanvas() {
     let waitingForAction = false
     let stepsRemaining = 0
 
-    const predictSocket = createPredictSocket(
-        (action) => {
-            pendingAction = Number(action) === 1 ? 1 : 0
-        },
-        () => {
-            waitingForAction = false
-            actionNeeded = false
-            stepsRemaining = 4
-        }
-    )
+    const predictSocket = createPredictSocket()
+
     const captureCanvas = document.createElement("canvas")
     captureCanvas.width = 84
     captureCanvas.height = 84
@@ -346,12 +325,19 @@ async function displayOnCanvas() {
         throw new Error("Could not create frame capture context")
     }
 
+    // Load ONNX Model
+    console.log("Loading ONNX model...");
+    const session = await ort.InferenceSession.create('/static/flappy_bird.onnx');
+    console.log("Model loaded successfully!");
+
+    // Frame Queue for stacking 4 frames
+    const frameQueue = [];
+
     let lastFrameTime = performance.now()
     const FPS = 80
     const frameInterval = 1000 / FPS
     let accumulator = 0
     let gameCount = 1
-
 
     const loop = (now) => {
         const delta = now - lastFrameTime
@@ -362,10 +348,52 @@ async function displayOnCanvas() {
             if (actionNeeded && !waitingForAction) {
                 game.renderGameplay(game.gameplayCtx)
                 const frame = captureFrame84(game.getObservationCanvas(), captureCtx)
-                if (predictSocket.readyState === WebSocket.OPEN) {
-                    predictSocket.send(JSON.stringify({ frame: frame }))
-                    waitingForAction = true
+
+                if (frameQueue.length === 0) {
+                    for (let i = 0; i < 4; i++) {
+                        frameQueue.push(frame);
+                    }
+                } else {
+                    frameQueue.push(frame);
+                    if (frameQueue.length > 4) {
+                        frameQueue.shift();
+                    }
                 }
+
+                waitingForAction = true;
+
+                // Create Tensor [1, 4, 84, 84]
+                const tensorData = new Float32Array(4 * 84 * 84);
+                let offset = 0;
+                for (let c = 0; c < 4; c++) {
+                    const cFrame = frameQueue[c];
+                    for (let y = 0; y < 84; y++) {
+                        for (let x = 0; x < 84; x++) {
+                            tensorData[offset++] = cFrame[y][x];
+                        }
+                    }
+                }
+
+                const tensor = new ort.Tensor('float32', tensorData, [1, 4, 84, 84]);
+
+                // Set initial property to ensure feed names match model inputs
+                session.run({ input: tensor }).then((results) => {
+                    const output = results.output.data;
+
+                    // The ONNX model exported from MLflow direct policy predict wraps the argmax.
+                    // The output is a single value array containing the predicted action (0 or 1).
+                    const predictedAction = Number(output[0]);
+
+                    pendingAction = predictedAction === 1 ? 1 : 0;
+                    waitingForAction = false;
+                    actionNeeded = false;
+                    stepsRemaining = 4;
+                }).catch((error) => {
+                    console.error("ONNX Inference Error:", error);
+                    waitingForAction = false;
+                    actionNeeded = false;
+                    stepsRemaining = 4;
+                });
             }
 
             if (!actionNeeded && !waitingForAction && stepsRemaining > 0) {
@@ -381,6 +409,8 @@ async function displayOnCanvas() {
                 if (done) {
                     gameCount += 1
                     game.reset()
+                    frameQueue.length = 0 // Clear frames on reset
+
                     if (predictSocket.readyState === WebSocket.OPEN) {
                         predictSocket.send(JSON.stringify({ reset: true, score: game.score }))
                     }
