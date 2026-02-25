@@ -5,15 +5,12 @@ import os
 from stable_baselines3 import DQN
 import random
 from flappy_bird import FlappyBird
+from utils.fetch_model import model
 
 # Constants
 GAME_WIDTH = 288
 GAME_HEIGHT = 512
 FPS = 18
-
-# Model Paths
-MODEL_PATH = "models/DQN_FlappyBird/flappy_model_720000_steps"
-# MODEL_PATH = "models/DQN_FlappyBird/flappy_model_690000_steps"
 
 
 class FrameStackWrapper:
@@ -75,7 +72,8 @@ def draw_text_centered(surface, text, font, color, y_offset=0, bg_color=None):
 
 
 def main():
-    os.environ["SDL_VIDEODRIVER"] = "cocoa"  # Ensure we use a windowed driver on Mac
+    # Ensure we use a windowed driver on Mac
+    os.environ["SDL_VIDEODRIVER"] = "cocoa"
     pygame.init()
 
     # Setup Main Window
@@ -83,7 +81,8 @@ def main():
     pygame.display.set_caption("AI vs Human - Flappy Bird")
 
     # Sub-surfaces
-    left_surface = screen.subsurface(pygame.Rect(0, 0, GAME_WIDTH, GAME_HEIGHT))
+    left_surface = screen.subsurface(
+        pygame.Rect(0, 0, GAME_WIDTH, GAME_HEIGHT))
     right_surface = screen.subsurface(
         pygame.Rect(GAME_WIDTH, 0, GAME_WIDTH, GAME_HEIGHT)
     )
@@ -99,16 +98,8 @@ def main():
     print(f"Initializing with seed: {start_seed}")
 
     ai_game = FlappyBird(player="AI", surface=left_surface, seed=start_seed)
-    human_game = FlappyBird(player="human", surface=right_surface, seed=start_seed)
-
-    # Load AI Model
-    print("Loading AI Model...")
-    try:
-        model = DQN.load(MODEL_PATH)
-        print("Model Loaded!")
-    except Exception as e:
-        print(f"Failed to load model: {e}")
-        return
+    human_game = FlappyBird(
+        player="human", surface=right_surface, seed=start_seed)
 
     # AI State Management
     ai_stack = FrameStackWrapper(k=4)
@@ -188,10 +179,13 @@ def main():
 
             # Draw UI
             pygame.draw.line(
-                screen, (255, 255, 255), (GAME_WIDTH, 0), (GAME_WIDTH, GAME_HEIGHT), 5
+                screen, (255, 255, 255), (GAME_WIDTH,
+                                          0), (GAME_WIDTH, GAME_HEIGHT), 5
             )
-            draw_text_centered(left_surface, "AI BOT", font, (255, 0, 0), y_offset=-100)
-            draw_text_centered(right_surface, "HUMAN", font, (0, 0, 255), y_offset=-100)
+            draw_text_centered(left_surface, "AI BOT", font,
+                               (255, 0, 0), y_offset=-100)
+            draw_text_centered(right_surface, "HUMAN", font,
+                               (0, 0, 255), y_offset=-100)
 
             # Start Button
             btn_rect = draw_text_centered(
@@ -217,7 +211,10 @@ def main():
         elif current_state == STATE_PLAYING:
             # --- PREDICT AI ACTION ---
             if not ai_dead:
-                action, _ = model.predict(ai_obs_stacked, deterministic=True)
+                obs_expanded = np.expand_dims(ai_obs_stacked, axis=0)
+                obs_transposed = np.transpose(obs_expanded, (0, 3, 1, 2))
+                action_raw = model.predict(obs_transposed)
+                action = int(np.asarray(action_raw).flatten()[0])
                 ai_should_flap = action == 1
             else:
                 ai_should_flap = False
@@ -270,7 +267,8 @@ def main():
 
             # Draw Separator
             pygame.draw.line(
-                screen, (255, 255, 255), (GAME_WIDTH, 0), (GAME_WIDTH, GAME_HEIGHT), 5
+                screen, (255, 255, 255), (GAME_WIDTH,
+                                          0), (GAME_WIDTH, GAME_HEIGHT), 5
             )
 
             # Draw Scores (Show Human Score Only)
@@ -284,9 +282,11 @@ def main():
 
             # Draw "Dead" labels
             if ai_dead:
-                draw_text_centered(left_surface, "AI LOST", big_font, (255, 0, 0))
+                draw_text_centered(left_surface, "AI LOST",
+                                   big_font, (255, 0, 0))
             if human_dead:
-                draw_text_centered(right_surface, "YOU LOST", big_font, (255, 0, 0))
+                draw_text_centered(right_surface, "YOU LOST",
+                                   big_font, (255, 0, 0))
 
             # Check Game Over trigger
             if ai_dead and human_dead:
@@ -299,7 +299,8 @@ def main():
             human_game.render()
 
             pygame.draw.line(
-                screen, (255, 255, 255), (GAME_WIDTH, 0), (GAME_WIDTH, GAME_HEIGHT), 5
+                screen, (255, 255, 255), (GAME_WIDTH,
+                                          0), (GAME_WIDTH, GAME_HEIGHT), 5
             )
 
             # Draw Scores

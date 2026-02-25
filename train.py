@@ -8,7 +8,7 @@ import cv2
 import mlflow
 from stable_baselines3 import DQN
 from stable_baselines3.common.vec_env import DummyVecEnv, VecFrameStack
-from stable_baselines3.common.callbacks import CheckpointCallback
+from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.logger import KVWriter, Logger, HumanOutputFormat
 
@@ -68,11 +68,65 @@ class MLflowOutputFormat(KVWriter):
                 mlflow.log_metric(key, value, step=step)
 
 
+class MLflowTrainingCallback(BaseCallback):
+    def __init__(
+        self, save_freq: int, save_dir: str, log_freq: int = 1000, verbose: int = 0
+    ):
+        super().__init__(verbose)
+        self.save_freq = save_freq
+        self.save_dir = save_dir
+        self.log_freq = log_freq
+        os.makedirs(self.save_dir, exist_ok=True)
+
+    def _on_step(self) -> bool:
+        infos = self.locals.get("infos", [])
+        for info in infos:
+            episode = info.get("episode")
+            if episode is not None:
+                mlflow.log_metric(
+                    "episode_reward", float(episode["r"]), step=self.num_timesteps
+                )
+                mlflow.log_metric(
+                    "episode_length", float(episode["l"]), step=self.num_timesteps
+                )
+                if "score" in info:
+                    mlflow.log_metric(
+                        "episode_score", float(info["score"]), step=self.num_timesteps
+                    )
+
+        if self.n_calls % self.log_freq == 0:
+            logger_values = getattr(self.model.logger, "name_to_value", {})
+            metrics_to_track = {
+                "train_loss": "train/loss",
+                "train_n_updates": "train/n_updates",
+                "rollout_exploration_rate": "rollout/exploration_rate",
+                "rollout_ep_rew_mean": "rollout/ep_rew_mean",
+                "rollout_ep_len_mean": "rollout/ep_len_mean",
+                "time_fps": "time/fps",
+            }
+            for metric_name, logger_key in metrics_to_track.items():
+                value = logger_values.get(logger_key)
+                if value is not None and np.isscalar(value):
+                    mlflow.log_metric(
+                        metric_name, float(value), step=self.num_timesteps
+                    )
+
+        if self.n_calls % self.save_freq == 0:
+            checkpoint_name = f"flappy_model_{self.num_timesteps}_steps"
+            checkpoint_path = os.path.join(self.save_dir, checkpoint_name)
+            self.model.save(checkpoint_path)
+            mlflow.log_artifact(
+                f"{checkpoint_path}.zip", artifact_path="intermediate_models"
+            )
+
+        return True
+
+
 def main():
     mlflow.set_tracking_uri("http://34.32.83.247:5000")
     mlflow.set_experiment("FlappyBird_DQN")
     train_params = {
-        "buffer_size": 100000,
+        "buffer_size": 100000,  # Memory of past experiences
         "learning_starts": 10000,  # Wait 10k steps before training (fill buffer)
         "batch_size": 32,
         "exploration_fraction": 0.2,  # Explore 20% of the time, then purely exploit
@@ -81,9 +135,11 @@ def main():
         "train_freq": 4,  # Train every 4 steps
         "gradient_steps": 4,  # Train 4 times per update (learn faster)
         "learning_rate": 3e-4,  # Made the learning rate 3x more
+        "skip_frames": 1,
+        "checkpoint_freq": 100000,
     }
 
-    with mlflow.start_run(run_name="dqn-high-lr-v1"):
+    with mlflow.start_run(run_name="dqn-high-lr-v2"):
         mlflow.log_params(train_params)
         # Create directories for saving models and logs
         models_dir = "models/DQN_FlappyBird"
@@ -110,29 +166,17 @@ def main():
 
         # --- 3. The Model (DQN) ---
         model = DQN(
-            "CnnPolicy",  # Use a Convolutional Neural Network
+            "CnnPolicy",
             env,
-            buffer_size=train_params["buffer_size"],  # Memory of past experiences
-            learning_starts=train_params[
-                "learning_starts"
-            ],  # Wait 10k steps before training (fill buffer)
+            buffer_size=train_params["buffer_size"],
+            learning_starts=train_params["learning_starts"],
             batch_size=train_params["batch_size"],
-            exploration_fraction=train_params[
-                "exploration_fraction"
-            ],  # Explore 20% of the time, then purely exploit
-            exploration_final_eps=train_params[
-                "exploration_final_eps"
-            ],  # Never stop exploring completely (2% random)
-            target_update_interval=train_params[
-                "target_update_interval"
-            ],  # Update the "Target Network" every 1k steps
-            train_freq=train_params["train_freq"],  # Train every 4 steps
-            gradient_steps=train_params[
-                "gradient_steps"
-            ],  # Train 4 times per update (learn faster)
-            learning_rate=train_params[
-                "learning_rate"
-            ],  # Made the learning rate 3x more
+            exploration_fraction=train_params["exploration_fraction"],
+            exploration_final_eps=train_params["exploration_final_eps"],
+            target_update_interval=train_params["target_update_interval"],
+            train_freq=train_params["train_freq"],
+            gradient_steps=train_params["gradient_steps"],
+            learning_rate=train_params["learning_rate"],
             verbose=1,
             tensorboard_log="logs",
         )
@@ -144,16 +188,18 @@ def main():
         )
 
         model.set_logger(custom_logger)
-        # --- 5. The Save Callback ---
-        # Save the model every 10,000 steps so we can view progress later
-        checkpoint_callback = CheckpointCallback(
-            save_freq=10000, save_path=models_dir, name_prefix="flappy_model"
+        # --- 5. Training + Artifact Callback ---
+        # Log metrics and save/log checkpoints every 100,000 steps
+        training_callback = MLflowTrainingCallback(
+            save_freq=train_params["checkpoint_freq"],
+            save_dir=models_dir,
+            log_freq=1000,
         )
 
         # --- 6. Train ---
         print("Starting training...")
         # 1,000,000 steps is a good starting point for Flappy Bird
-        model.learn(total_timesteps=1000000, callback=checkpoint_callback)
+        model.learn(total_timesteps=1000000, callback=training_callback)
 
         # Save the final model
         model.save(f"{models_dir}/flappy_model_final")

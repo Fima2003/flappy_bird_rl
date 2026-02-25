@@ -12,7 +12,8 @@ class FlappyBirdGym(gym.Env):
 
         self.action_space = Discrete(2)  # 0 - Do Nothing, 1 - Jump
         self.observation_space = Box(
-            low=0, high=255, shape=(512, 288, 3), dtype=np.uint8)
+            low=0, high=255, shape=(512, 288, 3), dtype=np.uint8
+        )
 
         self.game = FlappyBird(player=player)
 
@@ -26,12 +27,7 @@ class FlappyBirdGym(gym.Env):
         self.state = np.transpose(pixels, axes=(1, 0, 2)).astype(np.uint8)
         return self.state
 
-    def reset(
-        self,
-        *,
-        seed: int | None = None,
-        options: dict[str, Any] | None = None
-    ):
+    def reset(self, *, seed: int | None = None, options: dict[str, Any] | None = None):
         super().reset(seed=seed, options=options)
 
         self.game.reset()

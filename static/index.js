@@ -50,6 +50,63 @@ function intersects(a, b) {
     )
 }
 
+function getImageAlphaMask(image) {
+    const canvas = document.createElement("canvas");
+    canvas.width = image.width;
+    canvas.height = image.height;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) throw new Error("Could not create mask context");
+    ctx.drawImage(image, 0, 0);
+    const imageData = ctx.getImageData(0, 0, image.width, image.height).data;
+    const mask = new Uint8Array(image.width * image.height);
+    for (let i = 0; i < mask.length; i++) {
+        mask[i] = imageData[i * 4 + 3] > 0 ? 1 : 0;
+    }
+    return mask;
+}
+
+function getRotatedImageAlphaMask(image) {
+    const canvas = document.createElement("canvas");
+    canvas.width = image.width;
+    canvas.height = image.height;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) throw new Error("Could not create mask context");
+
+    ctx.translate(canvas.width / 2, canvas.height / 2);
+    ctx.rotate(Math.PI);
+    ctx.drawImage(image, -image.width / 2, -image.height / 2);
+
+    const imageData = ctx.getImageData(0, 0, image.width, image.height).data;
+    const mask = new Uint8Array(image.width * image.height);
+    for (let i = 0; i < mask.length; i++) {
+        mask[i] = imageData[i * 4 + 3] > 0 ? 1 : 0;
+    }
+    return mask;
+}
+
+function pixelCollide(rectA, maskA, rectB, maskB) {
+    const xMin = Math.max(Math.floor(rectA.x), Math.floor(rectB.x));
+    const xMax = Math.min(Math.floor(rectA.x + rectA.width), Math.floor(rectB.x + rectB.width));
+    const yMin = Math.max(Math.floor(rectA.y), Math.floor(rectB.y));
+    const yMax = Math.min(Math.floor(rectA.y + rectA.height), Math.floor(rectB.y + rectB.height));
+
+    if (xMin >= xMax || yMin >= yMax) return false;
+
+    for (let y = yMin; y < yMax; y++) {
+        for (let x = xMin; x < xMax; x++) {
+            const aX = x - Math.floor(rectA.x);
+            const aY = y - Math.floor(rectA.y);
+            const bX = x - Math.floor(rectB.x);
+            const bY = y - Math.floor(rectB.y);
+
+            if (maskA[aY * rectA.width + aX] && maskB[bY * rectB.width + bX]) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 function createPredictSocket() {
     const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:"
     const ws = new WebSocket(`${wsProtocol}//${window.location.host}/predict`)
@@ -69,25 +126,90 @@ function createPredictSocket() {
     return ws
 }
 
-function captureFrame84(canvas, captureCtx) {
-    captureCtx.drawImage(canvas, 0, 0, 84, 84)
-    const imageData = captureCtx.getImageData(0, 0, 84, 84).data
-    const frame = []
+function captureFrame84AreaAverage(canvas, captureCtx) {
+    // 1. Get full-resolution pixel data from the source canvas
+    const sw = canvas.width;
+    const sh = canvas.height;
 
-    for (let y = 0; y < 84; y += 1) {
-        const row = []
-        for (let x = 0; x < 84; x += 1) {
-            const idx = (y * 84 + x) * 4
-            const r = imageData[idx]
-            const g = imageData[idx + 1]
-            const b = imageData[idx + 2]
-            const gray = Math.round(0.299 * r + 0.587 * g + 0.114 * b)
-            row.push(gray)
+    // We reuse captureCtx just to read the full image data if it was drawn there.
+    // Wait, the easiest way to read the full source canvas is to grab its imageData directly.
+    const sourceCtx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!sourceCtx) throw new Error("Could not get source context");
+
+    const sourceImageData = sourceCtx.getImageData(0, 0, sw, sh).data;
+
+    const dw = 84;
+    const dh = 84;
+
+    const scaleX = dw / sw;
+    const scaleY = dh / sh;
+
+    // 2. We will output an 84x84 array of grayscale values
+    const frame = [];
+
+    for (let dy = 0; dy < dh; dy++) {
+        const row = [];
+        // Determine the horizontal mapped region [sy1, sy2]
+        const sy1 = dy / scaleY;
+        const sy2 = (dy + 1) / scaleY;
+
+        for (let dx = 0; dx < dw; dx++) {
+            const sx1 = dx / scaleX;
+            const sx2 = (dx + 1) / scaleX;
+
+            let sum_gray = 0;
+            let total_area = 0;
+
+            // Iterate over all integer pixels in the source bounding box
+            const startX = Math.floor(sx1);
+            const endX = Math.min(Math.ceil(sx2), sw);
+            const startY = Math.floor(sy1);
+            const endY = Math.min(Math.ceil(sy2), sh);
+
+            for (let sy = startY; sy < endY; sy++) {
+                // Determine vertical overlap
+                let yOverlap = 1.0;
+                if (sy < sy1) {
+                    yOverlap = (sy + 1) - sy1;
+                } else if (sy + 1 > sy2) {
+                    yOverlap = sy2 - sy;
+                }
+
+                for (let sx = startX; sx < endX; sx++) {
+                    // Determine horizontal overlap
+                    let xOverlap = 1.0;
+                    if (sx < sx1) {
+                        xOverlap = (sx + 1) - sx1;
+                    } else if (sx + 1 > sx2) {
+                        xOverlap = sx2 - sx;
+                    }
+
+                    const area = xOverlap * yOverlap;
+                    total_area += area;
+
+                    const idx = (sy * sw + sx) * 4;
+                    const r = sourceImageData[idx];
+                    const g = sourceImageData[idx + 1];
+                    const b = sourceImageData[idx + 2];
+
+                    // Standard grayscale formula matching OpenCV
+                    const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+
+                    sum_gray += gray * area;
+                }
+            }
+
+            // Average it out and round to nearest integer
+            let final_gray = 0;
+            if (total_area > 0) {
+                final_gray = Math.round(sum_gray / total_area);
+            }
+            row.push(final_gray);
         }
-        frame.push(row)
+        frame.push(row);
     }
 
-    return frame
+    return frame;
 }
 
 class FlappyBirdCanvasGame {
@@ -116,6 +238,10 @@ class FlappyBirdCanvasGame {
             height: images.bird.height,
             velocity: 0,
         }
+
+        this.birdMask = getImageAlphaMask(images.bird)
+        this.pipeMaskBottom = getImageAlphaMask(images.pipe)
+        this.pipeMaskTop = getRotatedImageAlphaMask(images.pipe)
 
         this.pipes = []
         this.lastGapY = null
@@ -157,7 +283,8 @@ class FlappyBirdCanvasGame {
     generatePipePair() {
         const halfGap = this.interDist / 2
         // Limit gap bounds so we don't expose the top or bottom of the 320px pipe image
-        const minY = Math.max(100, halfGap + this.height - this.images.pipe.height)
+        const groundTop = this.height - 112
+        const minY = Math.max(100, halfGap + groundTop - this.images.pipe.height)
         const maxY = Math.min(this.height - 100, this.images.pipe.height - halfGap)
 
         let gapCenterY
@@ -188,7 +315,8 @@ class FlappyBirdCanvasGame {
     }
 
     checkCollision() {
-        if (this.bird.y + this.bird.height >= this.height || this.bird.y <= 0) {
+        const groundTop = this.height - 112
+        if (this.bird.y + this.bird.height >= groundTop || this.bird.y <= 0) {
             return true
         }
 
@@ -213,8 +341,15 @@ class FlappyBirdCanvasGame {
                 height: this.images.pipe.height,
             }
 
-            if (intersects(birdRect, topRect) || intersects(birdRect, bottomRect)) {
-                return true
+            if (intersects(birdRect, topRect)) {
+                if (pixelCollide(birdRect, this.birdMask, topRect, this.pipeMaskTop)) {
+                    return true
+                }
+            }
+            if (intersects(birdRect, bottomRect)) {
+                if (pixelCollide(birdRect, this.birdMask, bottomRect, this.pipeMaskBottom)) {
+                    return true
+                }
             }
         }
 
@@ -313,7 +448,6 @@ async function displayOnCanvas() {
     let pendingAction = 0
     let actionNeeded = true
     let waitingForAction = false
-    let stepsRemaining = 0
 
     const predictSocket = createPredictSocket()
 
@@ -334,7 +468,7 @@ async function displayOnCanvas() {
     const frameQueue = [];
 
     let lastFrameTime = performance.now()
-    const FPS = 80
+    const FPS = 20
     const frameInterval = 1000 / FPS
     let accumulator = 0
     let gameCount = 1
@@ -347,7 +481,7 @@ async function displayOnCanvas() {
         while (accumulator >= frameInterval) {
             if (actionNeeded && !waitingForAction) {
                 game.renderGameplay(game.gameplayCtx)
-                const frame = captureFrame84(game.getObservationCanvas(), captureCtx)
+                const frame = captureFrame84AreaAverage(game.getObservationCanvas(), captureCtx)
 
                 if (frameQueue.length === 0) {
                     for (let i = 0; i < 4; i++) {
@@ -396,29 +530,33 @@ async function displayOnCanvas() {
                 });
             }
 
-            if (!actionNeeded && !waitingForAction && stepsRemaining > 0) {
-                if (stepsRemaining === 4 && pendingAction === 1) {
-                    game.flapQueued = true
-                } else {
-                    game.flapQueued = false
-                }
+            if (!actionNeeded && !waitingForAction) {
+                let done = false;
+                for (let i = 0; i < 4; i++) {
+                    if (i === 0 && pendingAction === 1) {
+                        game.flapQueued = true
+                    } else {
+                        game.flapQueued = false
+                    }
 
-                const done = game.step()
-                stepsRemaining -= 1
+                    done = game.step()
+                    if (done) break
+                }
 
                 if (done) {
                     gameCount += 1
+                    const finalScore = game.score
                     game.reset()
                     frameQueue.length = 0 // Clear frames on reset
 
                     if (predictSocket.readyState === WebSocket.OPEN) {
-                        predictSocket.send(JSON.stringify({ reset: true, score: game.score }))
+                        predictSocket.send(JSON.stringify({ reset: true, score: finalScore }))
                     }
                     actionNeeded = true
                     waitingForAction = false
-                    stepsRemaining = 0
-                } else if (stepsRemaining === 0) {
+                } else {
                     actionNeeded = true
+                    waitingForAction = false
                 }
 
                 game.renderGameplay(game.gameplayCtx)
