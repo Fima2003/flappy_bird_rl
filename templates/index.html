@@ -1,12 +1,25 @@
 <!DOCTYPE html>
 <html>
-    <head>
-        <title>Flappy Bird AI</title>
-        <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
-        <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
-    </head>
-    <body>
+
+<head>
+    <title>Flappy Bird AI</title>
+    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+
+<body>
+    <div class="game-container">
+        <h1 class="game-title">Flappy Bird</h1>
+        <div class="score-container">
+            <h2>AI Score: <span id="ai-score">0</span> &nbsp;&nbsp;&nbsp; Player Score: <span id="player-score">0</span>
+            </h2>
+        </div>
         <canvas id="main-canvas"></canvas>
-    </body>
-    <script src="{{ url_for('static', filename='index.js') }}"></script>
+        <div class="footer">
+            Created by Yukhym Rubin. <a href="https://www.linkedin.com/in/yukhym-rubin/" target="_blank">LinkedIn</a>
+        </div>
+    </div>
+</body>
+<script src="{{ url_for('static', filename='index.js') }}"></script>
+
 </html>

@@ -231,12 +231,22 @@ class FlappyBirdCanvasGame {
         this.minGapTopClearance = 90
         this.minGapBottomClearance = 85
 
-        this.bird = {
+        this.aiBird = {
             x: 50 - Math.floor(images.bird.width / 2),
             y: 256 - Math.floor(images.bird.height / 2),
             width: images.bird.width,
             height: images.bird.height,
             velocity: 0,
+            dead: false,
+        }
+
+        this.playerBird = {
+            x: 50 - Math.floor(images.bird.width / 2),
+            y: 256 - Math.floor(images.bird.height / 2),
+            width: images.bird.width,
+            height: images.bird.height,
+            velocity: 0,
+            dead: false,
         }
 
         this.birdMask = getImageAlphaMask(images.bird)
@@ -245,7 +255,8 @@ class FlappyBirdCanvasGame {
 
         this.pipes = []
         this.lastGapY = null
-        this.flapQueued = false
+        this.aiFlapQueued = false
+        this.playerFlapQueued = false
 
         this.canvas.width = this.width
         this.canvas.height = this.height
@@ -267,12 +278,26 @@ class FlappyBirdCanvasGame {
     }
 
     reset() {
-        this.bird.x = 50 - Math.floor(this.images.bird.width / 2)
-        this.bird.y = 256 - Math.floor(this.images.bird.height / 2)
-        this.bird.velocity = 0
+        this.aiBird.x = 50 - Math.floor(this.images.bird.width / 2)
+        this.aiBird.y = 256 - Math.floor(this.images.bird.height / 2)
+        this.aiBird.velocity = 0
+        this.aiBird.dead = false
+
+        this.playerBird.x = 50 - Math.floor(this.images.bird.width / 2)
+        this.playerBird.y = 256 - Math.floor(this.images.bird.height / 2)
+        this.playerBird.velocity = 0
+        this.playerBird.dead = false
 
         this.pipes = []
-        this.score = 0
+        this.aiScore = 0
+        this.playerScore = 0
+
+        const aiScoreEl = document.getElementById("ai-score")
+        if (aiScoreEl) aiScoreEl.textContent = this.aiScore
+
+        const playerScoreEl = document.getElementById("player-score")
+        if (playerScoreEl) playerScoreEl.textContent = this.playerScore
+
         this.lastGapY = null
 
         for (let i = 0; i < 10; i += 1) {
@@ -310,21 +335,24 @@ class FlappyBirdCanvasGame {
             x,
             topY: topBottom - this.images.pipe.height,
             bottomY: bottomTop,
-            scored: false,
+            aiScored: false,
+            playerScored: false,
         })
     }
 
-    checkCollision() {
+    checkCollision(bird) {
+        if (bird.dead) return true;
+
         const groundTop = this.height - 112
-        if (this.bird.y + this.bird.height >= groundTop || this.bird.y <= 0) {
+        if (bird.y + bird.height >= groundTop || bird.y <= 0) {
             return true
         }
 
         const birdRect = {
-            x: this.bird.x,
-            y: this.bird.y,
-            width: this.bird.width,
-            height: this.bird.height,
+            x: bird.x,
+            y: bird.y,
+            width: bird.width,
+            height: bird.height,
         }
 
         for (const pipe of this.pipes) {
@@ -357,39 +385,76 @@ class FlappyBirdCanvasGame {
     }
 
     step() {
-        let passedPipe = false
+        let aiPassedPipe = false
+        let playerPassedPipe = false
+
+        let pipeRemoved = false;
 
         for (let i = this.pipes.length - 1; i >= 0; i -= 1) {
             const pipe = this.pipes[i]
             pipe.x -= this.pipeVx
 
-            if (this.bird.x > pipe.x + this.images.pipe.width && !pipe.scored) {
-                passedPipe = true
-                pipe.scored = true
+            if (!this.aiBird.dead && this.aiBird.x > pipe.x + this.images.pipe.width && !pipe.aiScored) {
+                aiPassedPipe = true
+                pipe.aiScored = true
+            }
+
+            if (!this.playerBird.dead && this.playerBird.x > pipe.x + this.images.pipe.width && !pipe.playerScored) {
+                playerPassedPipe = true
+                pipe.playerScored = true
             }
 
             if (pipe.x + this.images.pipe.width < 0) {
                 this.pipes.splice(i, 1)
+                pipeRemoved = true;
             }
         }
 
-        if (passedPipe) {
-            this.score += 1
+        if (aiPassedPipe) {
+            this.aiScore += 1
+            const aiScoreEl = document.getElementById("ai-score")
+            if (aiScoreEl) aiScoreEl.textContent = this.aiScore
+        }
+
+        if (playerPassedPipe) {
+            this.playerScore += 1
+            const playerScoreEl = document.getElementById("player-score")
+            if (playerScoreEl) playerScoreEl.textContent = this.playerScore
+        }
+
+        // Only generate exactly one pipe per removed pipe
+        if (pipeRemoved) {
             this.generatePipePair()
         }
 
-        this.bird.velocity += this.gravity
-        if (this.flapQueued) {
-            this.bird.velocity = this.flapStrength
+        if (!this.aiBird.dead) {
+            this.aiBird.velocity += this.gravity
+            if (this.aiFlapQueued) {
+                this.aiBird.velocity = this.flapStrength
+            }
+            this.aiBird.y += Math.trunc(this.aiBird.velocity)
+            if (this.checkCollision(this.aiBird)) {
+                this.aiBird.dead = true;
+            }
         }
-        this.flapQueued = false
+        this.aiFlapQueued = false
 
-        this.bird.y += Math.trunc(this.bird.velocity)
+        if (!this.playerBird.dead) {
+            this.playerBird.velocity += this.gravity
+            if (this.playerFlapQueued) {
+                this.playerBird.velocity = this.flapStrength
+            }
+            this.playerBird.y += Math.trunc(this.playerBird.velocity)
+            if (this.checkCollision(this.playerBird)) {
+                this.playerBird.dead = true;
+            }
+        }
+        this.playerFlapQueued = false
 
-        return this.checkCollision()
+        return this.aiBird.dead && this.playerBird.dead
     }
 
-    renderGameplay(targetCtx) {
+    renderGameplay(targetCtx, isObservation = false) {
         targetCtx.clearRect(0, 0, this.width, this.height)
         targetCtx.drawImage(this.images.bg, 0, 0)
 
@@ -406,7 +471,23 @@ class FlappyBirdCanvasGame {
             targetCtx.restore()
         }
 
-        targetCtx.drawImage(this.images.bird, this.bird.x, this.bird.y)
+        if (isObservation) {
+            // For AI Observation: Only draw AI bird (100% opacity)
+            if (!this.aiBird.dead) {
+                targetCtx.drawImage(this.images.bird, this.aiBird.x, this.aiBird.y)
+            }
+        } else {
+            // For Visual Screen: Draw AI bird at 50% opacity, Player bird at 100%
+            if (!this.aiBird.dead) {
+                targetCtx.globalAlpha = 0.5;
+                targetCtx.drawImage(this.images.bird, this.aiBird.x, this.aiBird.y)
+            }
+
+            targetCtx.globalAlpha = 1.0;
+            if (!this.playerBird.dead) {
+                targetCtx.drawImage(this.images.bird, this.playerBird.x, this.playerBird.y)
+            }
+        }
     }
 
     getObservationCanvas() {
@@ -414,10 +495,8 @@ class FlappyBirdCanvasGame {
     }
 
     render() {
-        this.renderGameplay(this.gameplayCtx)
-
-        this.ctx.clearRect(0, 0, this.width, this.height)
-        this.ctx.drawImage(this.gameplayCanvas, 0, 0)
+        // Render visual frame to main canvas directly
+        this.renderGameplay(this.ctx, false)
     }
 }
 
@@ -473,99 +552,166 @@ async function displayOnCanvas() {
     let accumulator = 0
     let gameCount = 1
 
+    let playerWantToFlap = false;
+
+    let gameStarted = false;
+
+    const handleStartAndFlap = (e) => {
+        if (e && e.type === 'touchstart' && e.target.tagName !== 'A') {
+            // Prevent mouse events from firing after touch
+            e.preventDefault();
+        }
+        if (!gameStarted) {
+            gameStarted = true;
+            actionNeeded = true;
+            waitingForAction = false;
+            lastFrameTime = performance.now(); // reset delta calculation
+        }
+        playerWantToFlap = true;
+    };
+
+    // Listen for space bar, enter, or up arrow
+    window.addEventListener("keydown", (e) => {
+        if (e.code === "Space" || e.code === "ArrowUp" || e.code === "Enter") {
+            if (e.code === "Space" || e.code === "ArrowUp") e.preventDefault();
+            handleStartAndFlap(e);
+        }
+    });
+
+    // Listen for mouse click or screen tap
+    window.addEventListener("mousedown", (e) => {
+        if (e.target.tagName !== 'A') {
+            handleStartAndFlap(e);
+        }
+    });
+    window.addEventListener("touchstart", (e) => {
+        if (e.target.tagName !== 'A') {
+            handleStartAndFlap(e);
+        }
+    }, { passive: false });
+
     const loop = (now) => {
         const delta = now - lastFrameTime
         lastFrameTime = now
         accumulator += delta
 
-        while (accumulator >= frameInterval) {
-            if (actionNeeded && !waitingForAction) {
-                game.renderGameplay(game.gameplayCtx)
-                const frame = captureFrame84AreaAverage(game.getObservationCanvas(), captureCtx)
+        if (gameStarted) {
+            while (accumulator >= frameInterval) {
+                if (actionNeeded && !waitingForAction) {
+                    // Must render observation frame to offscreen canvas
+                    game.renderGameplay(game.gameplayCtx, true)
+                    const frame = captureFrame84AreaAverage(game.getObservationCanvas(), captureCtx)
 
-                if (frameQueue.length === 0) {
-                    for (let i = 0; i < 4; i++) {
+                    if (frameQueue.length === 0) {
+                        for (let i = 0; i < 4; i++) {
+                            frameQueue.push(frame);
+                        }
+                    } else {
                         frameQueue.push(frame);
-                    }
-                } else {
-                    frameQueue.push(frame);
-                    if (frameQueue.length > 4) {
-                        frameQueue.shift();
-                    }
-                }
-
-                waitingForAction = true;
-
-                // Create Tensor [1, 4, 84, 84]
-                const tensorData = new Float32Array(4 * 84 * 84);
-                let offset = 0;
-                for (let c = 0; c < 4; c++) {
-                    const cFrame = frameQueue[c];
-                    for (let y = 0; y < 84; y++) {
-                        for (let x = 0; x < 84; x++) {
-                            tensorData[offset++] = cFrame[y][x];
+                        if (frameQueue.length > 4) {
+                            frameQueue.shift();
                         }
                     }
+
+                    waitingForAction = true;
+
+                    // Create Tensor [1, 4, 84, 84]
+                    const tensorData = new Float32Array(4 * 84 * 84);
+                    let offset = 0;
+                    for (let c = 0; c < 4; c++) {
+                        const cFrame = frameQueue[c];
+                        for (let y = 0; y < 84; y++) {
+                            for (let x = 0; x < 84; x++) {
+                                tensorData[offset++] = cFrame[y][x];
+                            }
+                        }
+                    }
+
+                    const tensor = new ort.Tensor('float32', tensorData, [1, 4, 84, 84]);
+
+                    // Set initial property to ensure feed names match model inputs
+                    session.run({ input: tensor }).then((results) => {
+                        const output = results.output.data;
+
+                        // The ONNX model exported from MLflow direct policy predict wraps the argmax.
+                        // The output is a single value array containing the predicted action (0 or 1).
+                        const predictedAction = Number(output[0]);
+
+                        pendingAction = predictedAction === 1 ? 1 : 0;
+                        waitingForAction = false;
+                        actionNeeded = false;
+                        stepsRemaining = 4;
+                    }).catch((error) => {
+                        console.error("ONNX Inference Error:", error);
+                        waitingForAction = false;
+                        actionNeeded = false;
+                        stepsRemaining = 4;
+                    });
                 }
 
-                const tensor = new ort.Tensor('float32', tensorData, [1, 4, 84, 84]);
+                if (!actionNeeded && !waitingForAction) {
+                    let done = false;
+                    for (let i = 0; i < 4; i++) {
+                        if (i === 0 && pendingAction === 1) {
+                            game.aiFlapQueued = true
+                        } else {
+                            game.aiFlapQueued = false
+                        }
 
-                // Set initial property to ensure feed names match model inputs
-                session.run({ input: tensor }).then((results) => {
-                    const output = results.output.data;
+                        if (i === 0 && playerWantToFlap) {
+                            game.playerFlapQueued = true
+                        } else {
+                            game.playerFlapQueued = false
+                        }
 
-                    // The ONNX model exported from MLflow direct policy predict wraps the argmax.
-                    // The output is a single value array containing the predicted action (0 or 1).
-                    const predictedAction = Number(output[0]);
+                        done = game.step()
+                        if (done) break
+                    }
 
-                    pendingAction = predictedAction === 1 ? 1 : 0;
-                    waitingForAction = false;
-                    actionNeeded = false;
-                    stepsRemaining = 4;
-                }).catch((error) => {
-                    console.error("ONNX Inference Error:", error);
-                    waitingForAction = false;
-                    actionNeeded = false;
-                    stepsRemaining = 4;
-                });
-            }
+                    playerWantToFlap = false; // Reset player input after the 4-frame pass
 
-            if (!actionNeeded && !waitingForAction) {
-                let done = false;
-                for (let i = 0; i < 4; i++) {
-                    if (i === 0 && pendingAction === 1) {
-                        game.flapQueued = true
+                    if (done) {
+                        gameCount += 1
+                        const finalScore = game.aiScore
+                        game.reset()
+                        frameQueue.length = 0 // Clear frames on reset
+
+                        if (predictSocket.readyState === WebSocket.OPEN) {
+                            predictSocket.send(JSON.stringify({ reset: true, score: finalScore }))
+                        }
+
+                        gameStarted = false; // Require user to press enter again to play
+                        actionNeeded = true
+                        waitingForAction = false
                     } else {
-                        game.flapQueued = false
+                        actionNeeded = true
+                        waitingForAction = false
                     }
 
-                    done = game.step()
-                    if (done) break
+                    // Removed visual render logic from physics ticks, hander in requestAnimationFrame loop
                 }
 
-                if (done) {
-                    gameCount += 1
-                    const finalScore = game.score
-                    game.reset()
-                    frameQueue.length = 0 // Clear frames on reset
-
-                    if (predictSocket.readyState === WebSocket.OPEN) {
-                        predictSocket.send(JSON.stringify({ reset: true, score: finalScore }))
-                    }
-                    actionNeeded = true
-                    waitingForAction = false
-                } else {
-                    actionNeeded = true
-                    waitingForAction = false
-                }
-
-                game.renderGameplay(game.gameplayCtx)
+                accumulator -= frameInterval
             }
-
-            accumulator -= frameInterval
         }
 
+        // Render visual frame
         game.render()
+
+        // Draw start overlay if game hasn't started or just died
+        if (!gameStarted) {
+            game.ctx.fillStyle = "rgba(0, 0, 0, 0.5)"
+            game.ctx.fillRect(0, 0, game.width, game.height)
+            game.ctx.font = "bold 20px 'Courier New'"
+            game.ctx.fillStyle = "white"
+            game.ctx.textAlign = "center"
+            game.ctx.fillText("TAP TO START", game.width / 2, game.height / 2)
+            game.ctx.fillStyle = "#FFC107"
+            game.ctx.fillText("AI (50% opacity)", game.width / 2, game.height / 2 + 30)
+            game.ctx.fillStyle = "#FFF"
+            game.ctx.fillText("Player (Tap/Space)", game.width / 2, game.height / 2 + 60)
+        }
+
         requestAnimationFrame(loop)
     }
 
