@@ -8,15 +8,26 @@
 </head>
 
 <body>
-    <div class="game-container">
-        <h1 class="game-title">Flappy Bird</h1>
-        <div class="score-container">
-            <h2>AI Score: <span id="ai-score">0</span> &nbsp;&nbsp;&nbsp; Player Score: <span id="player-score">0</span>
-            </h2>
+    <div class="app-wrapper">
+        <div class="game-container">
+            <h1 class="game-title">Flappy Bird</h1>
+            <div class="score-container">
+                <h2>AI Score: <span id="ai-score">0</span> &nbsp;&nbsp;&nbsp; Player Score: <span
+                        id="player-score">0</span>
+                </h2>
+            </div>
+            <canvas id="main-canvas"></canvas>
+            <div class="footer">
+                Created by Yukhym Rubin. <a href="https://www.linkedin.com/in/yukhym-rubin/"
+                    target="_blank">LinkedIn</a>
+            </div>
         </div>
-        <canvas id="main-canvas"></canvas>
-        <div class="footer">
-            Created by Yukhym Rubin. <a href="https://www.linkedin.com/in/yukhym-rubin/" target="_blank">LinkedIn</a>
+
+        <div class="history-container">
+            <h2>Match History</h2>
+            <div id="history-list" class="history-list">
+                <!-- Javascript will inject history items here -->
+            </div>
         </div>
     </div>
 </body>

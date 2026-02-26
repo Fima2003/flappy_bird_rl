@@ -97,14 +97,74 @@ body::after {
 	user-select: none;
 }
 
+.app-wrapper {
+	display: flex;
+	flex-direction: row;
+	align-items: flex-start;
+	justify-content: center;
+	gap: 40px;
+	width: 100vw;
+	max-width: 1200px;
+	padding: 0 5%;
+	z-index: 10;
+}
+
 .game-container {
 	display: flex;
 	flex-direction: column;
 	align-items: center;
-	z-index: 10;
-	width: 100vw;
-	margin: 0;
-	padding: 0 5%;
+}
+
+.history-container {
+	width: 300px;
+	background: rgba(0, 0, 0, 0.4);
+	border: 6px solid var(--frame-dark);
+	border-radius: 8px;
+	padding: 15px;
+	box-shadow: 0 10px 0 rgba(62, 50, 36, 0.3);
+	margin-top: 80px; /* Align nicely with canvas */
+}
+
+.history-container h2 {
+	color: #FFC107;
+	text-shadow: 2px 2px 0 #000, -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000;
+	text-align: center;
+	font-size: 1.5rem;
+	margin-top: 0;
+	margin-bottom: 15px;
+	text-transform: uppercase;
+}
+
+.history-list {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	max-height: 50vh;
+	overflow-y: auto;
+}
+
+.history-item {
+	background: rgba(255, 255, 255, 0.1);
+	border: 2px solid var(--frame-dark);
+	padding: 10px;
+	color: white;
+	text-shadow: 1px 1px 0 #000;
+	font-size: 0.9rem;
+}
+
+.history-item.ai-win {
+	border-color: #f44336;
+	background: rgba(244, 67, 54, 0.2);
+}
+
+.history-item.player-win {
+	border-color: #4CAF50;
+	background: rgba(76, 175, 80, 0.2);
+}
+
+.history-item.draw {
+	border-color: #9E9E9E;
+	background: rgba(158, 158, 158, 0.2);
 }
 
 .game-title {
@@ -140,6 +200,21 @@ body::after {
 
 .footer a:hover {
 	color: #fff;
+}
+
+@media (max-width: 900px) {
+	.app-wrapper {
+		flex-direction: column;
+		align-items: center;
+		gap: 20px;
+	}
+	
+	.history-container {
+		width: 100%;
+		max-width: 400px;
+		margin-top: 10px;
+		margin-bottom: 20px;
+	}
 }
 
 @media (max-width: 600px) {

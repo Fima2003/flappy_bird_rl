@@ -4,4 +4,4 @@ models*
 logs*
 .confidential/
 mlflow.db
-mlruns/
+mlruns/.env

@@ -108,6 +108,7 @@ function pixelCollide(rectA, maskA, rectB, maskB) {
 }
 
 function createPredictSocket() {
+    // ... socket logic stays the same ...
     const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:"
     const ws = new WebSocket(`${wsProtocol}//${window.location.host}/predict`)
 
@@ -125,6 +126,42 @@ function createPredictSocket() {
 
     return ws
 }
+
+async function fetchHistory() {
+    try {
+        const response = await fetch('/history');
+        if (!response.ok) return;
+        const data = await response.json();
+
+        const listEl = document.getElementById('history-list');
+        if (!listEl) return;
+
+        listEl.innerHTML = '';
+        data.forEach(item => {
+            const div = document.createElement('div');
+            div.className = `history-item ${item.winner === 'AI' ? 'ai-win' : item.winner === 'Player' ? 'player-win' : 'draw'}`;
+            // Format time if timestamp exists
+            let dateStr = "";
+            if (item.timestamp) {
+                const d = new Date(item.timestamp);
+                if (!isNaN(d.getTime())) {
+                    dateStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                }
+            }
+
+            div.innerHTML = `
+                <div><strong>${item.winner === 'Draw' ? 'Draw' : item.winner + ' Won!'}</strong> <span style="font-size: 0.8em; opacity: 0.7; float: right">${dateStr}</span></div>
+                <div style="margin-top: 5px;">AI: ${item.ai_score} | Player: ${item.player_score}</div>
+            `;
+            listEl.appendChild(div);
+        });
+    } catch (e) {
+        console.error("Failed to fetch history", e);
+    }
+}
+
+// Populate history on initial load
+document.addEventListener("DOMContentLoaded", fetchHistory);
 
 function captureFrame84AreaAverage(canvas, captureCtx) {
     // 1. Get full-resolution pixel data from the source canvas
@@ -555,6 +592,7 @@ async function displayOnCanvas() {
     let playerWantToFlap = false;
 
     let gameStarted = false;
+    let lastWinner = null;
 
     const handleStartAndFlap = (e) => {
         if (e && e.type === 'touchstart' && e.target.tagName !== 'A') {
@@ -672,13 +710,26 @@ async function displayOnCanvas() {
 
                     if (done) {
                         gameCount += 1
-                        const finalScore = game.aiScore
+                        const finalScoreAI = game.aiScore
+                        const finalScorePlayer = game.playerScore
+
+                        if (finalScoreAI > finalScorePlayer) lastWinner = "AI"
+                        else if (finalScorePlayer > finalScoreAI) lastWinner = "Player"
+                        else lastWinner = "Draw"
+
                         game.reset()
                         frameQueue.length = 0 // Clear frames on reset
 
                         if (predictSocket.readyState === WebSocket.OPEN) {
-                            predictSocket.send(JSON.stringify({ reset: true, score: finalScore }))
+                            predictSocket.send(JSON.stringify({ reset: true, score: finalScoreAI }))
                         }
+
+                        // Send HTTP to track history in DB
+                        fetch('/log_score', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ ai_score: finalScoreAI, player_score: finalScorePlayer, winner: lastWinner })
+                        }).then(() => fetchHistory());
 
                         gameStarted = false; // Require user to press enter again to play
                         actionNeeded = true
@@ -702,14 +753,29 @@ async function displayOnCanvas() {
         if (!gameStarted) {
             game.ctx.fillStyle = "rgba(0, 0, 0, 0.5)"
             game.ctx.fillRect(0, 0, game.width, game.height)
+            game.ctx.textAlign = "center"
+
+            if (lastWinner) {
+                game.ctx.font = "bold 30px 'Courier New'"
+                if (lastWinner === "AI") {
+                    game.ctx.fillStyle = "#f44336";
+                    game.ctx.fillText("AI DOMINATES!", game.width / 2, game.height / 2 - 40);
+                } else if (lastWinner === "Player") {
+                    game.ctx.fillStyle = "#4CAF50";
+                    game.ctx.fillText("HUMANITY SURVIVES", game.width / 2, game.height / 2 - 40);
+                } else {
+                    game.ctx.fillStyle = "#9E9E9E";
+                    game.ctx.fillText("DRAW!", game.width / 2, game.height / 2 - 40);
+                }
+            }
+
             game.ctx.font = "bold 20px 'Courier New'"
             game.ctx.fillStyle = "white"
-            game.ctx.textAlign = "center"
-            game.ctx.fillText("TAP TO START", game.width / 2, game.height / 2)
+            game.ctx.fillText("TAP TO START", game.width / 2, game.height / 2 + 10)
             game.ctx.fillStyle = "#FFC107"
-            game.ctx.fillText("AI (50% opacity)", game.width / 2, game.height / 2 + 30)
+            game.ctx.fillText("AI (50% opacity)", game.width / 2, game.height / 2 + 50)
             game.ctx.fillStyle = "#FFF"
-            game.ctx.fillText("Player (Tap/Space)", game.width / 2, game.height / 2 + 60)
+            game.ctx.fillText("Player (Tap/Enter)", game.width / 2, game.height / 2 + 80)
         }
 
         requestAnimationFrame(loop)
